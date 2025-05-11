@@ -1,6 +1,7 @@
 import requests
 import json
 import pandas as pd
+import numpy as np
 from time import sleep
 from typing import List, Dict
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -78,7 +79,7 @@ def parse_summary(symbol: str, data: Dict) -> Dict:
 
 # --- STEP 4: Main Execution ---
 def main():
-    tickers = get_sp500_tickers()[:20]  # Limit to 20 for testing
+    tickers = get_sp500_tickers()[:10]  # Limit to 20 for testing
     all_data = []
     error_symbols = []
 
@@ -105,6 +106,79 @@ def main():
                 error_symbols.append(symbol)
 
     df_summary = pd.DataFrame(all_data)
+
+    df_summary['Days to cover'] = np.where(
+        df_summary['Avg Volume 10D (M)'] != 0,
+        df_summary['Shares Short (M)'] / df_summary['Avg Volume 10D (M)'],
+        np.nan
+    ).round(2)
+    df_summary['Number of recommendations'] = df_summary[['sell', 'buy', 'hold', 'strong_sell', 'strong_buy']].sum(axis=1)
+
+
+    # Helper function to format percentage with % symbol
+    def format_percent(series):
+        return series.round(2).astype(str) + '%'
+
+    # Price vs Moving Averages
+    df_summary['% Price vs 50 Days Moving average'] = np.where(
+        df_summary['50D MA'] != 0,
+        ((df_summary['Last Price'] - df_summary['50D MA']) / df_summary['50D MA']) * 100,
+        np.nan
+    )
+    df_summary['% Price vs 50 Days Moving average'] = format_percent(df_summary['% Price vs 50 Days Moving average'])
+
+    df_summary['% Price vs 200 Days Moving average'] = np.where(
+        df_summary['200D MA'] != 0,
+        ((df_summary['Last Price'] - df_summary['200D MA']) / df_summary['200D MA']) * 100,
+        np.nan
+    )
+    df_summary['% Price vs 200 Days Moving average'] = format_percent(df_summary['% Price vs 200 Days Moving average'])
+
+    
+    df_summary['% of sell'] = format_percent(np.where(
+        df_summary['Number of recommendations'] != 0,
+        (df_summary['sell'] / df_summary['Number of recommendations']) * 100,
+        np.nan
+    ))
+
+    df_summary['% of underperform'] = format_percent(np.where(
+        df_summary['Number of recommendations'] != 0,
+        (df_summary['strong_sell'] / df_summary['Number of recommendations']) * 100,
+        np.nan
+    ))
+
+    df_summary['% of hold'] = format_percent(np.where(
+        df_summary['Number of recommendations'] != 0,
+        (df_summary['hold'] / df_summary['Number of recommendations']) * 100,
+        np.nan
+    ))
+
+    df_summary['% of buy'] = format_percent(np.where(
+        df_summary['Number of recommendations'] != 0,
+        (df_summary['buy'] / df_summary['Number of recommendations']) * 100,
+        np.nan
+    ))
+
+    df_summary['% of strong buy'] = format_percent(np.where(
+        df_summary['Number of recommendations'] != 0,
+        (df_summary['strong_buy'] / df_summary['Number of recommendations']) * 100,
+        np.nan
+    ))
+
+    # Price Target Differences
+    df_summary['Low Below current Abs %'] = np.where(
+        df_summary['Price Targets Low'] != 0,
+        ((df_summary['Price Targets Low'] - df_summary['Last Price']) / df_summary['Last Price']) * 100,
+        np.nan
+    )
+    df_summary['Low Below current Abs %'] = format_percent(df_summary['Low Below current Abs %'])
+
+    df_summary['High above current Abs %'] = np.where(
+        df_summary['Last Price'] != 0,
+        ((df_summary['Price Targets High'] - df_summary['Last Price']) / df_summary['Last Price']) * 100,
+        np.nan
+    )
+    df_summary['High above current Abs %'] = format_percent(df_summary['High above current Abs %'])
     df_summary.to_csv("Summary_output_SP500.csv", index=False)
     print("✅ Saved Summary_output_SP500.csv")
 
